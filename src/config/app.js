@@ -7,4 +7,7 @@ export const ROUTES = {
   BROWSE: '/browse',
   LIBRARY: '/library',
   SETTINGS: '/settings',
+  SEARCH: '/search',
+  LOGIN: '/login',
+  SIGNUP: '/signup',
 }

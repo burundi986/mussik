@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useStore } from '../../store'
 import { Icon } from './Icon'
-import { cn } from '../../utils/helpers'
+import { cn, getArtwork, getArtistName } from '../../utils/helpers'
 
 export function MusicCard({
   data,
@@ -32,12 +32,10 @@ export function MusicCard({
     addToPlaylist(data)
   }
 
-  const artworkUrl = type === 'artist'
-    ? `https://e-cdns-images.dzcdn.net/images/artist/${data.id}/250x250-000000-80-0-0.jpg`
-    : data.album?.cover_medium || data.cover_medium
-
-  const title = type === 'artist' ? data.name : type === 'album' ? data.title : data.title
-  const subtitle = type === 'artist' ? 'Artist' : type === 'album' ? 'Album' : data.artist?.name
+  const artworkUrl = getArtwork(data)
+  const title = type === 'artist' ? data.name : data.title
+  const subtitle =
+    type === 'artist' ? 'Artist' : type === 'album' ? 'Album' : getArtistName(data)
 
   return (
     <div
@@ -68,6 +66,7 @@ export function MusicCard({
         <p className="music-card-title">{title}</p>
         <p className="music-card-subtitle">{subtitle}</p>
       </div>
+      {data.source && <span className="music-card-source">{data.source}</span>}
       <div className={cn('music-card-actions', showActions && 'music-card-actions-visible')}>
         <button className="music-card-action" onClick={handlePlay} title="Play">
           <Icon name={isPlaying ? 'pause' : 'play'} size={16} />

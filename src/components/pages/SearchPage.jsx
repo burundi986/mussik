@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useStore } from '../../store'
 import { apiService } from '../../api/services/deezer'
+import { audiusService } from '../../api/services/audius'
 import { Icon } from '../ui/Icon'
-import { cn } from '../../utils/helpers'
 import { useDebounce } from '../../hooks/useDebounce'
 import { SearchSuggestions } from '../ui/SearchSuggestions'
 import { SearchHistory } from '../ui/SearchHistory'
@@ -12,18 +11,53 @@ import { EmptyState, ErrorState } from '../ui/ApiStates'
 
 const MAX_HISTORY = 20
 
+// Audius returns tracks/users/playlists; the page buckets them the same way
+// Deezer tracks are bucketed so the carousels stay provider-agnostic.
+async function searchDeezer(query) {
+  const [trackData, artistData, albumData] = await Promise.all([
+    apiService.searchSongs(query, 10),
+    apiService.searchArtists(query, 5),
+    apiService.searchAlbums(query, 5),
+  ])
+  return {
+    tracks: trackData.results.map((t) => ({ ...t, source: 'Deezer' })),
+    artists: artistData.results.map((a) => ({ ...a, source: 'Deezer' })),
+    albums: albumData.results.map((a) => ({ ...a, source: 'Deezer' })),
+  }
+}
+
+async function searchAudius(query) {
+  const data = await audiusService.searchAll(query, { trackLimit: 10, limit: 5 })
+  return {
+    tracks: data.tracks.map((t) => ({ ...t, source: 'Audius' })),
+    artists: data.users.map((u) => ({ ...u, source: 'Audius' })),
+    albums: data.playlists.map((p) => ({ ...p, source: 'Audius' })),
+  }
+}
+
+function mergeBuckets(a, b) {
+  return {
+    tracks: [...a.tracks, ...b.tracks],
+    artists: [...a.artists, ...b.artists],
+    albums: [...a.albums, ...b.albums],
+  }
+}
+
+const EMPTY_RESULTS = { tracks: [], artists: [], albums: [] }
+
 export function SearchPage() {
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState({ tracks: [], artists: [], albums: [] })
+  const [results, setResults] = useState(EMPTY_RESULTS)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [notice, setNotice] = useState(null)
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [activeCategory, setActiveCategory] = useState('all')
+  const [activeSource, setActiveSource] = useState('all')
   const [searchHistory, setSearchHistory] = useState([])
   const [showHistory, setShowHistory] = useState(false)
   const debouncedQuery = useDebounce(query, 350)
   const searchRef = useRef(null)
-  const abortControllerRef = useRef(null)
 
   useEffect(() => {
     try {
@@ -45,40 +79,65 @@ export function SearchPage() {
 
   useEffect(() => {
     if (!debouncedQuery.trim()) {
-      setResults({ tracks: [], artists: [], albums: [] })
+      setResults(EMPTY_RESULTS)
       setLoading(false)
       setError(null)
+      setNotice(null)
       return
     }
 
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-    }
-    abortControllerRef.current = new AbortController()
+    // Guard against out-of-order responses when the query or source changes
+    // faster than the requests resolve.
+    let cancelled = false
 
     const search = async () => {
       setLoading(true)
       setError(null)
+      setNotice(null)
       try {
-        const [trackData, artistData, albumData] = await Promise.all([
-          apiService.searchSongs(debouncedQuery, 10),
-          apiService.searchArtists(debouncedQuery, 5),
-          apiService.searchAlbums(debouncedQuery, 5),
-        ])
-        setResults({
-          tracks: trackData.results,
-          artists: artistData.results,
-          albums: albumData.results,
-        })
+        let nextResults
+        let failed = []
+
+        if (activeSource === 'deezer') {
+          nextResults = await searchDeezer(debouncedQuery)
+        } else if (activeSource === 'audius') {
+          nextResults = await searchAudius(debouncedQuery)
+        } else {
+          // allSettled so one failing provider still returns the other's results
+          const [deezer, audius] = await Promise.allSettled([
+            searchDeezer(debouncedQuery),
+            searchAudius(debouncedQuery),
+          ])
+          const ok = [deezer, audius].filter((r) => r.status === 'fulfilled')
+          if (ok.length === 0) {
+            throw deezer.reason || audius.reason
+          }
+          nextResults = ok.map((r) => r.value).reduce(mergeBuckets)
+          failed = [deezer, audius]
+            .map((r, i) => (r.status === 'rejected' ? ['Deezer', 'Audius'][i] : null))
+            .filter(Boolean)
+        }
+
+        if (cancelled) return
+        setResults(nextResults)
+        if (failed.length > 0) {
+          setNotice(`${failed.join(' and ')} could not be reached. Showing results from the other source.`)
+        }
       } catch (err) {
+        if (cancelled) return
         setError(err.message || 'Search failed')
+        setResults(EMPTY_RESULTS)
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
 
     search()
-  }, [debouncedQuery])
+
+    return () => {
+      cancelled = true
+    }
+  }, [debouncedQuery, activeSource])
 
   const handleSearch = useCallback((searchQuery) => {
     setQuery(searchQuery)
@@ -151,7 +210,7 @@ export function SearchPage() {
                 className="search-input-clear"
                 onClick={() => {
                   setQuery('')
-                  setResults({ tracks: [], artists: [], albums: [] })
+                  setResults(EMPTY_RESULTS)
                 }}
               >
                 <Icon name="close" size={16} />
@@ -181,7 +240,16 @@ export function SearchPage() {
 
       {query.trim() && (
         <div className="search-page-body">
-          <SearchFilters active={activeCategory} onChange={setActiveCategory} />
+          <SearchFilters
+            active={activeCategory}
+            onChange={setActiveCategory}
+            activeSource={activeSource}
+            onSourceChange={setActiveSource}
+          />
+
+          {notice && !loading && (
+            <p className="search-notice">{notice}</p>
+          )}
 
           {hasResults && (
             <p className="search-results-count">

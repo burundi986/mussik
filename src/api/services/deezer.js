@@ -1,4 +1,8 @@
-const API_BASE = 'https://api.deezer.com'
+// Deezer sends no CORS headers, so browser requests must go through a proxy.
+// In dev that is the `/deezer-api` route in vite.config.js. For a static deploy,
+// set VITE_DEEZER_BASE to a proxy that fronts api.deezer.com; without one,
+// Deezer-backed features will fail in the browser.
+const API_BASE = import.meta.env.VITE_DEEZER_BASE || '/deezer-api'
 
 // Simple in-memory cache
 const cache = new Map()

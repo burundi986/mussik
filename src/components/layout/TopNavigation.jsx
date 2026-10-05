@@ -1,9 +1,12 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useStore } from '../../store'
+import { useAuthStore } from '../../store/auth'
 import { Icon } from '../ui/Icon'
 
 export function TopNavigation() {
   const { searchQuery, setSearchQuery } = useStore()
+  const { user, logout } = useAuthStore()
   const [searchFocused, setSearchFocused] = useState(false)
 
   return (
@@ -42,15 +45,28 @@ export function TopNavigation() {
           <Icon name="more" size={20} />
         </button>
         <div className="user-menu">
-          <div className="user-avatar">
-            <span>U</span>
-          </div>
-          <div className="user-dropdown">
-            <button className="user-menu-btn">
-              <span className="user-name">User</span>
-              <span className="user-chevron"><Icon name="chevronDown" size={14} /></span>
-            </button>
-          </div>
+          {user ? (
+            <>
+              <div className="user-avatar">
+                <span>{(user.name || user.email || 'U').charAt(0).toUpperCase()}</span>
+              </div>
+              <div className="user-dropdown">
+                <button className="user-menu-btn">
+                  <span className="user-name">{user.name || user.email}</span>
+                  <span className="user-chevron"><Icon name="chevronDown" size={14} /></span>
+                </button>
+                <button className="user-menu-btn user-menu-signout" onClick={logout}>
+                  <Icon name="logOut" size={14} />
+                  <span className="user-name">Sign out</span>
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <Link to="/login" className="user-menu-btn">Log in</Link>
+              <Link to="/signup" className="user-menu-btn user-menu-cta">Sign up</Link>
+            </>
+          )}
         </div>
       </div>
     </header>

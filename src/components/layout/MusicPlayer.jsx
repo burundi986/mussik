@@ -2,7 +2,7 @@ import { useRef, useEffect, useCallback, useState } from 'react'
 import { useStore } from '../../store'
 import { Icon } from '../ui/Icon'
 import { cn } from '../../utils/helpers'
-import { formatTime } from '../../utils/helpers'
+import { formatTime, getArtwork, getAudioSource, getArtistName } from '../../utils/helpers'
 
 export function MusicPlayer() {
   const audioRef = useRef(null)
@@ -28,15 +28,17 @@ export function MusicPlayer() {
     playTrack,
   } = useStore()
 
+  const audioSource = getAudioSource(currentTrack)
+
   useEffect(() => {
-    if (!audioRef.current || !currentTrack?.preview) return
-    audioRef.current.src = currentTrack.preview
+    if (!audioRef.current || !audioSource) return
+    audioRef.current.src = audioSource
     audioRef.current.load()
     setIsLoading(true)
     if (isPlaying) {
       audioRef.current.play().catch(() => {})
     }
-  }, [currentTrack?.id, currentTrack?.preview])
+  }, [currentTrack?.id, audioSource])
 
   useEffect(() => {
     if (!audioRef.current) return
@@ -172,15 +174,15 @@ export function MusicPlayer() {
     <div className="music-player">
       <div className="music-player-left">
         <div className="player-art">
-          {currentTrack.album?.cover_medium ? (
-            <img src={currentTrack.album.cover_medium} alt={currentTrack.title} />
+          {getArtwork(currentTrack) ? (
+            <img src={getArtwork(currentTrack)} alt={currentTrack.title} />
           ) : (
             <Icon name="music" size={24} />
           )}
         </div>
         <div className="player-info">
           <span className="player-title">{currentTrack.title}</span>
-          <span className="player-artist">{currentTrack.artist?.name || 'Unknown'}</span>
+          <span className="player-artist">{getArtistName(currentTrack)}</span>
         </div>
         <button className="player-like-btn" onClick={() => useStore.getState().addToPlaylist(currentTrack)} title="Like">
           <Icon name="heart" size={16} />

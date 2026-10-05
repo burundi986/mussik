@@ -28,24 +28,38 @@ Musiiik is a music streaming web application built with React 19, Vite 8, and Ta
 ## Feature Inventory
 
 ### Search
-- **What**: Real-time debounced search across songs, artists, albums
+- **What**: Real-time debounced search across songs, artists, albums from Deezer and Audius
 - **Where**: `src/components/pages/SearchPage.jsx`
 - **Components**: `SearchPage`, `SearchSuggestions`, `SearchHistory`, `SearchFilters`
-- **How it works**: User types → `useDebounce` hook delays 350ms → `apiService` searches Deezer API → results displayed with suggestions and history
-- **Features**: Search suggestions, search history (localStorage), category filters, clear history
-- **API**: `apiService.searchSongs()`, `apiService.searchArtists()`, `apiService.searchAlbums()`
+- **How it works**: User types → `useDebounce` delays 350ms → the page queries the
+  selected providers → Deezer tracks/artists/albums and Audius tracks/users/playlists
+  are bucketed into the same three carousels, each item tagged with a `source`
+- **Source filter**: `All` / `Deezer` / `Audius`. In `All` mode both providers are
+  queried with `Promise.allSettled`, so one failing provider still renders the
+  other's results and a notice names the one that failed
+- **Race handling**: The effect tracks a local `cancelled` flag and cleans it up,
+  so a slow response cannot overwrite a newer query or source change
+- **Features**: Search suggestions, search history (localStorage), category
+  filters, source filters, per-card source badges, clear history
+- **API**: `apiService.searchSongs/searchArtists/searchAlbums()` and
+  `audiusService.searchAll()`
 - **Type**: Frontend-only
-- **Limitations**: No playlists, genres, or podcast results; limited to 10 results per category
+- **Limitations**: Audius playlists are presented in the Albums carousel; no
+  genres or podcast results; up to 10 tracks and 5 artists/albums per provider
 
 ### Music Player
 - **What**: Full-featured audio player
 - **Where**: `src/components/layout/MusicPlayer.jsx`
 - **Features**: Play, Pause, Previous, Next, Seek, Volume, Mute, Shuffle, Repeat, Progress bar, Duration, Queue, Album art
 - **Audio Engine**: HTML5 `<audio>` element
+- **Audio Source**: `getAudioSource(currentTrack)` in `src/utils/helpers.js`
+  prefers an Audius `streamUrl` (a full track) and falls back to a Deezer
+  `preview`. `audioSource` is hoisted above the effect so the dependency array
+  holds a plain value
 - **State**: Zustand store (`currentTrack`, `isPlaying`, `queue`, `shuffleEnabled`, `repeatMode`, `volume`, `isMuted`)
 - **Persistence**: Player state persists between page navigation (Zustand store)
-- **Type**: Frontend-only (audio from Deezer previews)
-- **Limitations**: Only short previews available from Deezer API; no streaming of full tracks
+- **Type**: Frontend-only (Deezer previews and Audius streams)
+- **Limitations**: Deezer offers only ~30 second previews; Audius streams the full track but depends on its CDN staying reachable
 
 ### Browse
 - **What**: Generic browse page template
@@ -83,9 +97,10 @@ Musiiik is a music streaming web application built with React 19, Vite 8, and Ta
 - **Type**: Frontend-only
 
 ### Top Navigation
-- **What**: Search bar with keyboard shortcut hint
+- **What**: Search bar with keyboard shortcut hint, plus session-aware user menu
 - **Where**: `src/components/layout/TopNavigation.jsx`
-- **Features**: Search input, user avatar, notifications
+- **Features**: Search input, notifications, and either Log in / Sign up links or
+  the signed-in user's initial plus a sign-out button, driven by `useAuthStore`
 - **Type**: Frontend-only (no actual search integration - just stores query)
 
 ## Architecture
@@ -97,11 +112,11 @@ Browser (React SPA served as static files)
   ↓
 React UI (Vite dev server or dist/)
   ↓
-Zustand Global Store (src/store/index.js)
+Zustand Stores (src/store/index.js, src/store/auth.js)
   ↓
-API Layer (src/api/services/deezer.js, audiomack.js, audius.js)
+API Layer (src/api/services/deezer.js, audiomack.js, audius.js, auth.js)
   ↓
-Deezer API (https://api.deezer.com)
+Deezer API (via /deezer-api proxy) + Audius API + localStorage accounts
   ↓
 Response → Data Transformation → UI
 ```
@@ -112,6 +127,11 @@ Response → Data Transformation → UI
 - Stores: `sidebarOpen`, `currentTrack`, `isPlaying`, `playlist`, `searchQuery`, `queue`, `queueIndex`, `shuffleEnabled`, `repeatMode`, `volume`, `isMuted`, `audioElement`
 - Actions: `toggleSidebar`, `setCurrentTrack`, `togglePlay`, `setSearchQuery`, `addToPlaylist`, `setQueue`, `setQueueIndex`, `toggleShuffle`, `setRepeatMode`, `setVolume`, `toggleMute`, `playTrack`, `nextTrack`, `prevTrack`, `addToQueue`, `removeFromQueue`, `clearQueue`
 - Persistence: In-memory only (no localStorage persistence for the store)
+
+**Auth State**: Zustand store (`src/store/auth.js`)
+- Stores: `user`, `error`, `loading`
+- Actions: `login`, `signup`, `logout`, `clearError`
+- Persistence: `musiiik_session` in localStorage, hydrated on load by `authService.getSession()`
 
 **Local State**: React `useState` in individual components
 - Examples: `SearchPage` (query, results, loading, error), `MusicPlayer` (currentTime, duration, isLoading)
@@ -126,13 +146,19 @@ Response → Data Transformation → UI
 
 | Property | Value |
 |----------|-------|
-| **Base URL** | `https://api.deezer.com` |
+| **Base URL** | `VITE_DEEZER_BASE`, defaults to `/deezer-api` |
 | **Authentication** | None (public API) |
 | **Rate Limits** | Not explicitly documented; API has implicit limits |
 | **Free-tier** | Short audio previews only (30 seconds) |
 | **Endpoints Used** | `/search`, `/search/artist`, `/search/album`, `/track/{id}`, `/artist/{id}`, `/album/{id}`, `/genre`, `/chart/title` |
 
 **Service File**: `src/api/services/deezer.js`
+
+**CORS**: `api.deezer.com` sends no `Access-Control-Allow-Origin` header, so
+browsers refuse direct calls. `vite.config.js` proxies `/deezer-api` to Deezer
+during `npm run dev`, and the service calls that path by default. A static
+deployment needs an equivalent proxy exposed through `VITE_DEEZER_BASE`;
+otherwise every Deezer-backed feature fails in the browser.
 
 The `apiService` object provides methods for all API interactions:
 - `searchSongs(query, limit)` - Search tracks
@@ -183,15 +209,25 @@ Player state (currentTrack, queue, volume, etc.) persists in the Zustand store. 
 
 ## Authentication & Security
 
-**NOT IMPLEMENTED**. There is no authentication system in the current codebase.
+Login and signup screens are implemented, but they are **not real authentication**.
 
-- No user registration, login, or logout
-- No sessions or tokens
-- No password hashing
-- No protected routes
-- The user avatar shows "U" placeholder text
+- `/login` and `/signup` are routed outside `AppLayout` (`src/App.jsx`), so they
+  render without the sidebar and player
+- `src/store/auth.js` is the Zustand store; `src/api/services/auth.js` holds the
+  storage logic and the `validateEmail` / `validatePassword` validators
+- Sessions live in `localStorage` under `musiiik_session` and accounts under
+  `musiiik_accounts`
+- Passwords are stored as a SHA-256 digest via `crypto.subtle.digest`, never in
+  cleartext
+- Sign-out clears the session and the top nav returns to Log in / Sign up links
+- No protected routes, no server-side checks, no tokens
 
-**Security Note**: The `.env` file is listed in `.gitignore` and should not be committed. The `.env.example` file is tracked and contains no secrets.
+**Security Note**: Because everything lives in `localStorage`, anyone with
+devtools can read or edit accounts and sessions, and a weak password is still
+recoverable from its digest. Replace the bodies of `src/api/services/auth.js`
+with real `fetch` calls before relying on this for anything real.
+
+**Environment Note**: The `.env` file is listed in `.gitignore` and should not be committed. The `.env.example` file is tracked and contains no secrets.
 
 ## Database
 
@@ -250,7 +286,35 @@ npm run build
 
 ## Testing
 
-**No automated tests exist.** There are no unit tests, integration tests, or end-to-end tests.
+Two automated suites exist, plus the manual checklist below.
+
+### `npm run test:auth`
+
+`test/auth-service.test.mjs` runs in plain Node against `auth.js` with a
+`localStorage` shim. Covers email and password validation, registration,
+duplicate-email rejection, session shape, the absence of plaintext passwords in
+localStorage, login success and both failure paths, and logout. No browser and no
+dev server required.
+
+### `npm run test:browser`
+
+`test/browser-check.mjs` drives headless Chrome over the DevTools protocol using
+Node 22's built-in `WebSocket`, with no test framework dependency. It requires:
+
+1. the dev server already running on `ORIGIN` (default `http://localhost:5173`)
+2. `CHROME_PATH` set to a Chrome or Edge executable
+3. Chrome able to launch with `--no-sandbox` in this environment
+
+It asserts both auth screens render outside the app shell, the field sets and
+validation gating work, a full signup → reload → login → logout round trip holds
+the session and keeps passwords off disk, a wrong password is rejected in place,
+every shell route renders, search returns results from **both** providers with
+source badges, the source filter narrows to one provider, and no console errors
+are emitted.
+
+Note: connect to a **page** target's `webSocketDebuggerUrl`, not the
+browser-level endpoint from `/json/version` — the latter rejects `Page.*`
+commands.
 
 ### Manual Testing Checklist
 
@@ -264,6 +328,14 @@ npm run build
 - [ ] Search history persists
 - [ ] Clear history works
 - [ ] Category filters work
+- [ ] Source filters work (All / Deezer / Audius)
+- [ ] Cards are badged with their source
+- [ ] One provider failing still shows the other's results
+- [ ] /login and /signup render without the app shell
+- [ ] Signup validates every field and blocks an empty submit
+- [ ] Signup creates a session with no plaintext password on disk
+- [ ] Login rejects a wrong password without navigating
+- [ ] Sign-out clears the session and restores the login links
 - [ ] Artist results show in carousel
 - [ ] Album results show in carousel
 - [ ] Song results show in carousel
@@ -287,8 +359,10 @@ npm run build
 
 ### Implemented
 - **Debounced search**: 350ms delay prevents excessive API calls
-- **API caching**: In-memory cache with 5-minute TTL
-- **Request cancellation**: AbortController cancels stale requests
+- **API caching**: In-memory cache with 5-minute TTL (Deezer and Audius)
+- **Stale response guard**: the search effect cancels its own late responses via a
+  cleanup flag instead of firing aborts, so a slow provider cannot overwrite a newer query
+- **Parallel providers**: Deezer and Audius are queried concurrently in `All` mode
 - **Tailwind CSS**: Purge unused styles
 - **Vite**: Fast HMR and optimized builds
 - **Skeleton loading**: Perceived performance during loading
@@ -313,6 +387,8 @@ npm run build
 - Sidebar collapse/expand
 - Focus states via CSS `:focus-visible`
 - Keyboard navigation (basic)
+- Auth forms: labelled inputs, inline errors, `role="alert"` on the error banner
+- Headless-Chrome assertions over `/login`, `/signup`, and the search page
 
 ### Needs Improvement
 - ARIA labels on many interactive elements
@@ -324,8 +400,8 @@ npm run build
 ## Known Limitations
 
 ### Application
-- No authentication system
-- No user accounts or profiles
+- No backend authentication: login and signup are localStorage emulation only
+- No protected routes or server-side authorization
 - No backend server
 - No database
 - No playlist management UI
@@ -339,9 +415,10 @@ npm run build
 
 ### API
 - Deezer free API provides only 30-second previews
-- No full track streaming
+- Deezer sends no CORS headers, so a static deploy needs its own proxy (`VITE_DEEZER_BASE`) or all Deezer features fail
+- Audius streams full tracks via a CDN redirect, which can fail independently of the API
 - API rate limits may cause errors
-- Search results limited to 10 per category
+- Search results limited to 10 tracks and 5 artists/albums per provider
 
 ### Browser
 - Requires a modern browser with ES module support
@@ -350,15 +427,16 @@ npm run build
 - No media key support
 
 ### Security
-- No authentication = no authorization
+- localStorage accounts are trivially editable, so "authentication" proves nothing
+- SHA-256 digests are not salted and are reversible for weak passwords
 - No input validation on API responses
-- No CORS handling beyond what fetch provides
-- `.env` file contains API base URL but no secrets
+- `.env` is gitignored; `.env.example` holds no secrets, and `VITE_*` values are public in the bundle
 
 ## Future Improvements
 
 ### High Priority
-- [ ] Implement actual authentication (registration/login)
+- [ ] Back the login/signup screens with a real auth API and drop localStorage emulation
+- [ ] Ship a Deezer proxy for production, or switch the default provider to Audius
 - [ ] Add proper playlist management (create/edit/delete)
 - [ ] Implement listening history persistence
 - [ ] Add proper search history UI on home page

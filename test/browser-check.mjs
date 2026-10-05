@@ -334,9 +334,9 @@ try {
   }))()`)
   expect('shows the category filters', filters.categories, (v) =>
     JSON.stringify(v) === JSON.stringify(['All', 'Songs', 'Artists', 'Albums']), 'categories: ' + JSON.stringify(filters.categories))
-  expect('shows all three source options', filters.sources, (v) =>
-    JSON.stringify(v) === JSON.stringify(['Every source', 'Deezer', 'Audius']), 'sources: ' + JSON.stringify(filters.sources))
-  expect('defaults to every source', filters.activeSource, (v) => v === 'Every source', 'active: ' + filters.activeSource)
+  expect('lists Audius first as the primary source', filters.sources, (v) =>
+    JSON.stringify(v) === JSON.stringify(['Audius', 'Every source', 'Deezer']), 'sources: ' + JSON.stringify(filters.sources))
+  expect('defaults to Audius', filters.activeSource, (v) => v === 'Audius', 'active: ' + filters.activeSource)
 
   let searchState = null
   for (let i = 0; i < 120; i++) {
@@ -358,43 +358,195 @@ try {
     'count text: ' + JSON.stringify(searchState.count))
   expect('badges each card with its source', searchState.sources.length, (v) => v > 0,
     'no source badges rendered')
-  expect('badges only name real providers', [...new Set(searchState.sources)], (v) =>
-    v.every((s) => s === 'Deezer' || s === 'Audius'), 'unexpected badges: ' + JSON.stringify(searchState.sources))
-  expect('merges both providers', [...new Set(searchState.sources)].sort(), (v) =>
-    v.length === 2, 'expected both Deezer and Audius, got ' + JSON.stringify([...new Set(searchState.sources)]))
+  expect('defaults to Audius-only results', [...new Set(searchState.sources)], (v) =>
+    v.length === 1 && v[0] === 'Audius', 'unexpected badges: ' + JSON.stringify([...new Set(searchState.sources)]))
   expect('reports no error', searchState.error, (v) => !v, 'error: ' + JSON.stringify(searchState.error))
 
-  console.log('source filter narrows to one provider')
+  console.log('Every source merges Deezer and Audius')
   await evaluate(s, `(() => {
-    const btn = [...document.querySelectorAll('.search-source-btn')].find((b) => b.textContent.trim() === 'Audius')
+    const btn = [...document.querySelectorAll('.search-source-btn')].find((b) => b.textContent.trim() === 'Every source')
     btn.click()
     return true
   })()`)
-  let audiusState = null
+  let mergedState = null
   for (let i = 0; i < 120; i++) {
     await sleep(250)
-    audiusState = await evaluate(s, `(() => ({
+    mergedState = await evaluate(s, `(() => ({
+      loading: !!document.querySelector('.search-loading'),
+      sources: [...document.querySelectorAll('.music-card-source')].map((e) => e.textContent.trim()),
+      active: document.querySelector('.search-source-active')?.textContent?.trim() ?? null,
+      notice: document.querySelector('.search-notice')?.textContent?.trim() ?? null,
+    }))()`)
+    if (!mergedState.loading && new Set(mergedState.sources).size > 1) break
+  }
+  expect('activates the Every source filter', mergedState.active, (v) => v === 'Every source',
+    'active: ' + mergedState.active)
+  expect('merges both providers', [...new Set(mergedState.sources)].sort(), (v) =>
+    v.length === 2, 'expected both Deezer and Audius, got ' + JSON.stringify([...new Set(mergedState.sources)]))
+
+  console.log('Deezer filter narrows to Deezer')
+  await evaluate(s, `(() => {
+    const btn = [...document.querySelectorAll('.search-source-btn')].find((b) => b.textContent.trim() === 'Deezer')
+    btn.click()
+    return true
+  })()`)
+  let deezerState = null
+  for (let i = 0; i < 120; i++) {
+    await sleep(250)
+    deezerState = await evaluate(s, `(() => ({
       loading: !!document.querySelector('.search-loading'),
       sources: [...document.querySelectorAll('.music-card-source')].map((e) => e.textContent.trim()),
       titles: document.querySelectorAll('.music-card-title').length,
       active: document.querySelector('.search-source-active')?.textContent?.trim() ?? null,
     }))()`)
-    if (!audiusState.loading && audiusState.titles > 0) break
+    if (!deezerState.loading && deezerState.titles > 0) break
   }
-  expect('activates the Audius filter', audiusState.active, (v) => v === 'Audius', 'active: ' + audiusState.active)
-  expect('returns Audius results', audiusState.titles, (v) => v > 0, 'no results for the Audius filter')
-  expect('shows only Audius badges', [...new Set(audiusState.sources)], (v) =>
-    v.length === 1 && v[0] === 'Audius', 'unexpected badges: ' + JSON.stringify([...new Set(audiusState.sources)]))
+  expect('activates the Deezer filter', deezerState.active, (v) => v === 'Deezer', 'active: ' + deezerState.active)
+  expect('returns Deezer results', deezerState.titles, (v) => v > 0, 'no results for the Deezer filter')
+  expect('shows only Deezer badges', [...new Set(deezerState.sources)], (v) =>
+    v.length === 1 && v[0] === 'Deezer', 'unexpected badges: ' + JSON.stringify([...new Set(deezerState.sources)]))
 
-  console.log('a track exposes a playable source')
-  const playable = await evaluate(s, `(() => {
-    const store = document.querySelector('#root')
+  console.log('only track cards are playable')
+  const playability = await evaluate(s, `(() => {
+    const sectionOf = (name) => [...document.querySelectorAll('.carousel')]
+      .find((s) => s.querySelector('.carousel-title')?.textContent.trim() === name)
+    const songs = sectionOf('Songs')
+    const artists = sectionOf('Artists')
     return {
-      hasAudio: !!document.querySelector('audio'),
-      sourceCount: document.querySelectorAll('.music-card').length,
+      songCards: songs?.querySelectorAll('.music-card').length ?? 0,
+      songPlayButtons: songs?.querySelectorAll('.music-card-action-btn').length ?? 0,
+      artistCards: artists?.querySelectorAll('.music-card').length ?? 0,
+      artistPlayButtons: artists?.querySelectorAll('.music-card-action-btn').length ?? 0,
     }
   })()`)
-  expect('renders track cards', playable.sourceCount, (v) => v > 0, 'no cards')
+  expect('song cards offer a play button', playability.songPlayButtons, (v) => v > 0,
+    'no play buttons in the Songs carousel')
+  expect('artist cards offer no play button', playability.artistPlayButtons, (v) => v === 0,
+    'artist cards should not be playable, found ' + playability.artistPlayButtons)
+  expect('artist cards still render', playability.artistCards, (v) => v > 0, 'no artist cards')
+
+  console.log('home page streams Audius trending music')
+  await goto(s, '/')
+  let homeState = null
+  for (let i = 0; i < 120; i++) {
+    await sleep(250)
+    homeState = await evaluate(s, `(() => {
+      const sectionOf = (name) => [...document.querySelectorAll('.carousel')]
+        .find((s) => s.querySelector('.carousel-title')?.textContent.trim() === name)
+      return {
+        skeletons: !!document.querySelector('.carousel-skeleton-card'),
+        error: document.querySelector('.error-state')?.textContent?.trim() ?? null,
+        trackCards: sectionOf('Trending on Audius')?.querySelectorAll('.music-card').length ?? 0,
+        playlistCards: sectionOf('Trending playlists')?.querySelectorAll('.music-card').length ?? 0,
+        heroTitle: document.querySelector('.home-hero-title')?.textContent?.trim() ?? null,
+        emptyMsg: document.querySelector('.carousel-empty')?.textContent?.trim() ?? null,
+      }
+    })()`)
+    if (!homeState.skeletons && (homeState.trackCards > 0 || homeState.error)) break
+  }
+  expect('home renders a hero', homeState.heroTitle, (v) => typeof v === 'string' && v.length > 0,
+    'no hero title')
+  expect('home shows trending tracks', homeState.trackCards, (v) => v > 0,
+    'no trending track cards. state: ' + JSON.stringify(homeState))
+  expect('home shows trending playlists', homeState.playlistCards, (v) => v > 0,
+    'no trending playlist cards. state: ' + JSON.stringify(homeState))
+  expect('home reports no error', homeState.error, (v) => !v, 'error: ' + JSON.stringify(homeState.error))
+
+  console.log('an Audius track actually plays')
+  // A synthetic el.click() carries no user activation, so Chrome's autoplay
+  // policy rejects audio.play(). Dispatch a real mouse event at the button's
+  // coordinates so this exercises the same path a user's click does.
+  const playPoint = await evaluate(s, `(() => {
+    const section = [...document.querySelectorAll('.carousel')]
+      .find((s) => s.querySelector('.carousel-title')?.textContent.trim() === 'Trending on Audius')
+    const card = section?.querySelector('.music-card')
+    if (!card) return null
+    const title = card.querySelector('.music-card-title')?.textContent.trim()
+    const btn = card.querySelector('.music-card-action-btn')
+    btn.scrollIntoView({ block: 'center' })
+    const r = btn.getBoundingClientRect()
+    return { title, x: r.left + r.width / 2, y: r.top + r.height / 2 }
+  })()`)
+  expect('located a trending track play button', playPoint, (v) => v !== null, 'no play button found')
+  const playedTitle = playPoint.title
+
+  await s.send('Input.dispatchMouseEvent', {
+    type: 'mousePressed', x: playPoint.x, y: playPoint.y, button: 'left', clickCount: 1,
+  })
+  await s.send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased', x: playPoint.x, y: playPoint.y, button: 'left', clickCount: 1,
+  })
+
+  let playback = null
+  for (let i = 0; i < 120; i++) {
+    await sleep(500)
+    playback = await evaluate(s, `(() => {
+      const audio = document.querySelector('audio')
+      if (!audio) return { hasAudio: false }
+      return {
+        hasAudio: true,
+        src: (audio.src || '').slice(0, 60),
+        currentTime: audio.currentTime,
+        duration: audio.duration,
+        readyState: audio.readyState,
+        error: audio.error ? audio.error.code : null,
+      }
+    })()`)
+    if (playback.currentTime > 0.2 || playback.error) break
+  }
+  expect('the player loads an Audius stream', playback.src, (v) =>
+    /audius|monophonic/i.test(v || ''), 'audio src was ' + playback.src)
+  expect('audio advances', playback.currentTime, (v) => v > 0.2, 'currentTime stayed at 0')
+  expect('audio reports no error', playback.error, (v) => v === null, 'media error code ' + playback.error)
+  expect('the player shows the track title', await evaluate(s,
+    `document.querySelector('.player-title')?.textContent?.trim() ?? null`),
+    (v) => v === playedTitle, `expected "${playedTitle}"`)
+
+  console.log('next and previous walk the carousel queue')
+  const srcBefore = await evaluate(s, `(document.querySelector('audio')?.src || '').slice(0, 90)`)
+  const nextBtn = await evaluate(s, `(() => {
+    const btn = [...document.querySelectorAll('.music-player button')]
+      .find((b) => b.title === 'Next')
+    if (!btn) return null
+    btn.scrollIntoView({ block: 'center' })
+    const r = btn.getBoundingClientRect()
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height }
+  })()`)
+  expect('found a next button', nextBtn, (v) => v !== null && v.w > 0 && v.h > 0,
+    'no next control in the player: ' + JSON.stringify(nextBtn))
+  await sleep(300)
+  // Re-read after scrolling settles; the rect moves once the player is in view.
+  const nextPt = await evaluate(s, `(() => {
+    const btn = [...document.querySelectorAll('.music-player button')].find((b) => b.title === 'Next')
+    const r = btn.getBoundingClientRect()
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+  })()`)
+  await s.send('Input.dispatchMouseEvent', {
+    type: 'mousePressed', x: nextPt.x, y: nextPt.y, button: 'left', clickCount: 1,
+  })
+  await s.send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased', x: nextPt.x, y: nextPt.y, button: 'left', clickCount: 1,
+  })
+  let advanced = null
+  // Wait for the queue to advance AND the new stream to actually start; an
+  // Audius stream needs a moment to buffer after the src swaps.
+  for (let i = 0; i < 90; i++) {
+    await sleep(400)
+    advanced = await evaluate(s, `(() => ({
+      title: document.querySelector('.player-title')?.textContent?.trim() ?? null,
+      src: (document.querySelector('audio')?.src || '').slice(0, 90),
+      currentTime: document.querySelector('audio')?.currentTime ?? 0,
+    }))()`)
+    if (advanced.title && advanced.title !== playedTitle && advanced.src !== srcBefore && advanced.currentTime > 0) break
+  }
+  expect('next advances to another track', advanced.title, (v) =>
+    typeof v === 'string' && v.length > 0 && v !== playedTitle,
+    `title stayed "${advanced.title}" (src before: ${srcBefore})`)
+  expect('the new track loads its own stream', advanced.src, (v) =>
+    /audius|monophonic/i.test(v || ''), 'audio src was ' + advanced.src)
+  expect('the stream actually changed', advanced.src !== srcBefore, (v) => v === true,
+    `src unchanged: ${advanced.src}`)
+  expect('the new track plays', advanced.currentTime, (v) => v > 0, 'currentTime stayed at 0')
 
   console.log('console errors')
   const noisy = consoleErrors.filter((t) =>

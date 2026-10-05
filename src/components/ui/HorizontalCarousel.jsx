@@ -16,6 +16,12 @@ export function HorizontalCarousel({ title, items, type, onPlay, loading, error,
     }
   }
 
+  // Hand the whole list plus the tapped index to the player so next/prev has
+  // something to walk through instead of stopping after the first track.
+  const handlePlay = onPlay
+    ? (item, index) => onPlay(item, items, index)
+    : undefined
+
   if (loading) {
     return (
       <section className="carousel">
@@ -78,13 +84,13 @@ export function HorizontalCarousel({ title, items, type, onPlay, loading, error,
         {items.map((item, index) => (
           <div key={`${type}-${item.id}-${index}`} className="carousel-item">
             {type === 'track' && (
-              <MusicCard data={item} type="track" size="md" onPlay={onPlay} />
+              <MusicCard data={item} type="track" size="md" onPlay={handlePlay} />
             )}
             {type === 'artist' && (
-              <MusicCard data={item} type="artist" size="md" onPlay={onPlay} />
+              <MusicCard data={item} type="artist" size="md" />
             )}
             {type === 'album' && (
-              <MusicCard data={item} type="album" size="md" onPlay={onPlay} />
+              <MusicCard data={item} type="album" size="md" />
             )}
           </div>
         ))}

@@ -1,4 +1,4 @@
-# Musiiik Documentation
+﻿# Musiiik Documentation
 
 Complete documentation for the Musiiik music streaming application.
 
@@ -28,24 +28,38 @@ Musiiik is a music streaming web application built with React 19, Vite 8, and Ta
 ## Feature Inventory
 
 ### Search
-- **What**: Real-time debounced search across songs, artists, albums from Deezer and Audius
+- **What**: Real-time debounced search across songs, artists, albums from Audius and Deezer
 - **Where**: `src/components/pages/SearchPage.jsx`
+- **Default source**: `audius`. The filter order is Audius / Every source / Deezer,
+  and only the **Every source** branch queries both providers
 - **Components**: `SearchPage`, `SearchSuggestions`, `SearchHistory`, `SearchFilters`
-- **How it works**: User types → `useDebounce` delays 350ms → the page queries the
-  selected providers → Deezer tracks/artists/albums and Audius tracks/users/playlists
+- **How it works**: User types â†’ `useDebounce` delays 350ms â†’ the page queries the
+  selected providers â†’ Deezer tracks/artists/albums and Audius tracks/users/playlists
   are bucketed into the same three carousels, each item tagged with a `source`
-- **Source filter**: `All` / `Deezer` / `Audius`. In `All` mode both providers are
-  queried with `Promise.allSettled`, so one failing provider still renders the
-  other's results and a notice names the one that failed
+- **Source filter**: In **Every source** mode both providers are queried with
+  `Promise.allSettled`, so one failing provider still renders the other's results
+  and a notice names the one that failed
 - **Race handling**: The effect tracks a local `cancelled` flag and cleans it up,
   so a slow response cannot overwrite a newer query or source change
+- **Queue**: Carousels pass the full item list and the tapped index to `playTrack`,
+  so Next/Prev walk the results instead of stopping after one track
 - **Features**: Search suggestions, search history (localStorage), category
   filters, source filters, per-card source badges, clear history
-- **API**: `apiService.searchSongs/searchArtists/searchAlbums()` and
-  `audiusService.searchAll()`
+- **API**: `audiusService.searchAll()` and
+  `apiService.searchSongs/searchArtists/searchAlbums()`
 - **Type**: Frontend-only
 - **Limitations**: Audius playlists are presented in the Albums carousel; no
   genres or podcast results; up to 10 tracks and 5 artists/albums per provider
+
+### Home
+- **What**: Trending music on Audius, so the app shows real content on first load
+- **Where**: `src/pages/Home.jsx`
+- **How it works**: `getTrendingTracks({ limit: 20 })` and
+  `getTrendingPlaylists({ limit: 10 })` run concurrently, render as two
+  carousels, and share the search queue wiring
+- **Type**: Frontend-only
+- **Notes**: Audius "trending" reflects all-network uploads, so long DJ sets and
+  remixes appear alongside full songs
 
 ### Music Player
 - **What**: Full-featured audio player
@@ -107,18 +121,18 @@ Musiiik is a music streaming web application built with React 19, Vite 8, and Ta
 
 ```
 User
-  ↓
+  â†“
 Browser (React SPA served as static files)
-  ↓
+  â†“
 React UI (Vite dev server or dist/)
-  ↓
+  â†“
 Zustand Stores (src/store/index.js, src/store/auth.js)
-  ↓
+  â†“
 API Layer (src/api/services/deezer.js, audiomack.js, audius.js, auth.js)
-  ↓
+  â†“
 Deezer API (via /deezer-api proxy) + Audius API + localStorage accounts
-  ↓
-Response → Data Transformation → UI
+  â†“
+Response â†’ Data Transformation â†’ UI
 ```
 
 ## State Management
@@ -192,10 +206,10 @@ Uses the HTML5 `<audio>` element (`src/components/layout/MusicPlayer.jsx`).
 | **Play/Pause** | `audio.play()` / `audio.pause()` via Zustand `isPlaying` state |
 | **Previous** | `prevTrack()` - moves to previous in queue |
 | **Next** | `nextTrack()` - advances to next track |
-| **Seek** | Click on progress bar → calculates position from mouse → sets `audio.currentTime` |
-| **Volume** | Range input → sets `audio.volume` and Zustand `volume` |
+| **Seek** | Click on progress bar â†’ calculates position from mouse â†’ sets `audio.currentTime` |
+| **Volume** | Range input â†’ sets `audio.volume` and Zustand `volume` |
 | **Mute** | Toggles `audio.muted` and Zustand `isMuted` |
-| **Shuffle** | Toggles `shuffleEnabled` → `nextTrack()` picks random index |
+| **Shuffle** | Toggles `shuffleEnabled` â†’ `nextTrack()` picks random index |
 | **Repeat** | Toggles `repeatMode` (`none`/`repeat-all`/`repeat-one`) |
 
 ### State Persistence
@@ -206,6 +220,11 @@ Player state (currentTrack, queue, volume, etc.) persists in the Zustand store. 
 - Loading audio: `isLoading` state shown with overlay
 - End of track: `onEnded` triggers `nextTrack()` or repeats based on mode
 - Network errors: `nextTrack()` called to skip
+- `.player-loading-overlay` is `pointer-events: none`. It is decorative only; without
+  this it covers the transport buttons and swallows every click while a stream
+  buffers, which makes the player look frozen
+- `isLoading` clears on `loadedmetadata`, but Audius streams can lag well behind
+  `canplay`/`playing`, so both are wired up to clear it as soon as playback starts
 
 ## Authentication & Security
 
@@ -306,14 +325,14 @@ Node 22's built-in `WebSocket`, with no test framework dependency. It requires:
 3. Chrome able to launch with `--no-sandbox` in this environment
 
 It asserts both auth screens render outside the app shell, the field sets and
-validation gating work, a full signup → reload → login → logout round trip holds
+validation gating work, a full signup â†’ reload â†’ login â†’ logout round trip holds
 the session and keeps passwords off disk, a wrong password is rejected in place,
 every shell route renders, search returns results from **both** providers with
 source badges, the source filter narrows to one provider, and no console errors
 are emitted.
 
 Note: connect to a **page** target's `webSocketDebuggerUrl`, not the
-browser-level endpoint from `/json/version` — the latter rejects `Page.*`
+browser-level endpoint from `/json/version` â€” the latter rejects `Page.*`
 commands.
 
 ### Manual Testing Checklist
@@ -328,7 +347,7 @@ commands.
 - [ ] Search history persists
 - [ ] Clear history works
 - [ ] Category filters work
-- [ ] Source filters work (All / Deezer / Audius)
+- [ ] Source filters work (Audius / Every source / Deezer)
 - [ ] Cards are badged with their source
 - [ ] One provider failing still shows the other's results
 - [ ] /login and /signup render without the app shell
@@ -362,7 +381,7 @@ commands.
 - **API caching**: In-memory cache with 5-minute TTL (Deezer and Audius)
 - **Stale response guard**: the search effect cancels its own late responses via a
   cleanup flag instead of firing aborts, so a slow provider cannot overwrite a newer query
-- **Parallel providers**: Deezer and Audius are queried concurrently in `All` mode
+- **Parallel providers**: Deezer and Audius are queried concurrently in "Every source" mode
 - **Tailwind CSS**: Purge unused styles
 - **Vite**: Fast HMR and optimized builds
 - **Skeleton loading**: Perceived performance during loading

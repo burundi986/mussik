@@ -1,4 +1,3 @@
-import { Icon } from '../ui/Icon'
 import { cn } from '../../utils/helpers'
 
 const categories = [
@@ -8,13 +7,14 @@ const categories = [
   { id: 'albums', label: 'Albums' },
 ]
 
+// Audius is the primary source: it is listed first and selected by default.
 const sources = [
-  { id: 'all', label: 'Every source', icon: 'search' },
-  { id: 'deezer', label: 'Deezer', icon: 'music' },
-  { id: 'audius', label: 'Audius', icon: 'music' },
+  { id: 'audius', label: 'Audius' },
+  { id: 'all', label: 'Every source' },
+  { id: 'deezer', label: 'Deezer' },
 ]
 
-export function SearchFilters({ active, onChange, activeSource = 'all', onSourceChange }) {
+export function SearchFilters({ active, onChange, activeSource = 'audius', onSourceChange }) {
   return (
     <>
       <div className="search-filters">
@@ -39,7 +39,6 @@ export function SearchFilters({ active, onChange, activeSource = 'all', onSource
               onClick={() => onSourceChange(src.id)}
               title={`Search ${src.label}`}
             >
-              <Icon name={src.icon} size={16} />
               <span>{src.label}</span>
             </button>
           ))}

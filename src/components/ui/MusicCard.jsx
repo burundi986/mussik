@@ -9,18 +9,27 @@ export function MusicCard({
   onPlay,
   size = 'md',
 }) {
-  const { playlist, addToPlaylist, togglePlay, currentTrack } = useStore()
+  const { addToPlaylist, currentTrack } = useStore()
   const [liked, setLiked] = useState(false)
   const [showActions, setShowActions] = useState(false)
 
-  const isPlaying = currentTrack?.id === data.id && useStore.getState().isPlaying
+  // Only tracks carry a playable audio source. Artist and album cards have no
+  // stream URL, so sending them to the player used to leave the player blank.
+  const isPlayable = type === 'track'
+  const isCurrent = isPlayable && currentTrack?.id === data.id
+  const isPlaying = isCurrent && useStore.getState().isPlaying
 
   const handlePlay = () => {
+    if (!isPlayable) return
     if (onPlay) {
       onPlay(data)
     } else {
-      useStore.getState().setCurrentTrack(data)
-      useStore.getState().togglePlay()
+      const store = useStore.getState()
+      if (store.currentTrack?.id === data.id) {
+        store.togglePlay()
+      } else {
+        store.playTrack(data, [data], 0)
+      }
     }
   }
 
@@ -51,15 +60,18 @@ export function MusicCard({
             <Icon name="music" size={size === 'lg' ? 32 : 20} />
           </div>
         )}
-        <div className={cn('music-card-overlay', showActions && 'music-card-overlay-visible')}>
-          <button
-            className={cn('music-card-action-btn', isPlaying && 'music-card-action-btn-active')}
-            onClick={handlePlay}
-            title={isPlaying ? 'Pause' : 'Play'}
-          >
-            <Icon name={isPlaying ? 'pause' : 'play'} size={20} />
-          </button>
-        </div>
+        {isPlayable && (
+          <div className={cn('music-card-overlay', showActions && 'music-card-overlay-visible')}>
+            <button
+              className={cn('music-card-action-btn', isPlaying && 'music-card-action-btn-active')}
+              onClick={handlePlay}
+              title={isPlaying ? 'Pause' : 'Play'}
+              aria-label={isPlaying ? `Pause ${title}` : `Play ${title}`}
+            >
+              <Icon name={isPlaying ? 'pause' : 'play'} size={20} />
+            </button>
+          </div>
+        )}
         {isPlaying && <div className="music-card-playing-indicator" />}
       </div>
       <div className="music-card-info">
@@ -68,9 +80,11 @@ export function MusicCard({
       </div>
       {data.source && <span className="music-card-source">{data.source}</span>}
       <div className={cn('music-card-actions', showActions && 'music-card-actions-visible')}>
-        <button className="music-card-action" onClick={handlePlay} title="Play">
-          <Icon name={isPlaying ? 'pause' : 'play'} size={16} />
-        </button>
+        {isPlayable && (
+          <button className="music-card-action" onClick={handlePlay} title={isPlaying ? 'Pause' : 'Play'}>
+            <Icon name={isPlaying ? 'pause' : 'play'} size={16} />
+          </button>
+        )}
         <button className="music-card-action" onClick={handleLike} title="Like">
           <Icon name="heart" size={16} />
         </button>

@@ -21,12 +21,27 @@ npm run preview
 ## 📝 Features
 
 - **Search**: Live search across songs, artists, and albums with debounced results
+- **Audius-first**: Trending music on the home page, and Audius is the default search source; Deezer is opt-in
 - **Multi-source**: Search Deezer and Audius together, or filter down to one provider; every card is badged with its source
 - **Login / Signup**: Auth screens with validation and a persistent session
 - **Music Player**: Full-featured audio player with seek, volume, shuffle, repeat, queue
 - **Browse**: Browse trending, popular artists, albums, and playlists
 - **Library**: Your personal library with liked songs and playlists
 - **Responsive Design**: Works from mobile to desktop (1024px+)
+
+## 🎧 Audius is the primary source
+
+Audius is the default everywhere:
+
+- The home page is built from `audiusService.getTrendingTracks()` and
+  `getTrendingPlaylists()`, so there is music on screen the moment the app loads
+- Search defaults to the **Audius** filter; **Every source** merges Deezer in,
+  and **Deezer** narrows to Deezer alone
+- Audius streams are full-length tracks. Deezer only offers ~30 second previews,
+  which is why it is no longer the default
+
+Deezer also needs a proxy in production, since it sends no CORS headers. See
+[Deezer needs a proxy](#deezer-needs-a-proxy) below.
 
 ## 🛠️ Tech Stack
 

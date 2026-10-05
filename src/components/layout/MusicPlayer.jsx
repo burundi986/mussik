@@ -57,6 +57,9 @@ export function MusicPlayer() {
       setDuration(audio.duration || 0)
       setIsLoading(false)
     }
+    // Audius serves streamed MP3s, so loadedmetadata can lag well behind
+    // canplay/playing. Clear the buffer state on whichever lands first.
+    const onCanPlay = () => setIsLoading(false)
     const onEnded = () => {
       setIsLoading(false)
       if (repeatMode === 'repeat-one') {
@@ -72,11 +75,15 @@ export function MusicPlayer() {
     }
     audio.addEventListener('timeupdate', onTimeUpdate)
     audio.addEventListener('loadedmetadata', onLoadedMetadata)
+    audio.addEventListener('canplay', onCanPlay)
+    audio.addEventListener('playing', onCanPlay)
     audio.addEventListener('ended', onEnded)
     audio.addEventListener('error', onError)
     return () => {
       audio.removeEventListener('timeupdate', onTimeUpdate)
       audio.removeEventListener('loadedmetadata', onLoadedMetadata)
+      audio.removeEventListener('canplay', onCanPlay)
+      audio.removeEventListener('playing', onCanPlay)
       audio.removeEventListener('ended', onEnded)
       audio.removeEventListener('error', onError)
     }

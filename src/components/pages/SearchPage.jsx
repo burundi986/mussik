@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useStore } from '../../store'
 import { apiService } from '../../api/services/deezer'
 import { audiusService } from '../../api/services/audius'
 import { Icon } from '../ui/Icon'
@@ -47,13 +48,15 @@ const EMPTY_RESULTS = { tracks: [], artists: [], albums: [] }
 
 export function SearchPage() {
   const [query, setQuery] = useState('')
+  const { playTrack } = useStore()
   const [results, setResults] = useState(EMPTY_RESULTS)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [activeCategory, setActiveCategory] = useState('all')
-  const [activeSource, setActiveSource] = useState('all')
+  // Audius is the primary source; Deezer is opt-in via the filter.
+  const [activeSource, setActiveSource] = useState('audius')
   const [searchHistory, setSearchHistory] = useState([])
   const [showHistory, setShowHistory] = useState(false)
   const debouncedQuery = useDebounce(query, 350)
@@ -300,6 +303,7 @@ export function SearchPage() {
               title="Songs"
               items={filtered.tracks}
               type="track"
+              onPlay={(track, queue, index) => playTrack(track, queue, index)}
             />
           )}
         </div>
